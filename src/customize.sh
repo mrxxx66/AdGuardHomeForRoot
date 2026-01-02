@@ -72,14 +72,14 @@ if [ -d "$AGH_DIR" ]; then
   info "- ⏹️ Found old version, stopping all AdGuardHome processes..." "- ⏹️ 发现旧版模块，正在停止所有 AdGuardHome 进程..."
   pkill -f "AdGuardHome" || pkill -9 -f "AdGuardHome" 
   info "- 🔄 Do you want to keep the old configuration? (If not, it will be automatically backed up)" "- 🔄 是否保留原来的配置文件？（若不保留则自动备份）"
-  info "- 🔊 (Volume Up = Yes, Volume Down = No, 10s no input = No)" "- 🔊 （音量上键 = 是, 音量下键 = 否，10秒无操作 = 否）"
+  info "- 🔊 (Volume Up = Yes, Volume Down = No, 30s no input = Yes)" "- 🔊 （音量上键 = 是, 音量下键 = 否，30秒无操作 = 是）"
   START_TIME=$(date +%s)
   while true; do
     NOW_TIME=$(date +%s)
     timeout 1 getevent -lc 1 2>&1 | grep KEY_VOLUME >"$TMPDIR/events"
-    if [ $((NOW_TIME - START_TIME)) -gt 9 ]; then
-      info "- ⏰ No input detected after 10 seconds, defaulting to not keep old configuration." "- ⏰ 10秒无输入，默认不保留原配置。"
-      extract_no_config
+    if [ $((NOW_TIME - START_TIME)) -gt 29 ]; then
+      info "- ⏰ No input detected after 30 seconds, defaulting to keep old configuration." "- ⏰ 30秒无输入，默认保留原配置。"
+      extract_keep_config
       break
     elif $(cat $TMPDIR/events | grep -q KEY_VOLUMEUP); then
       extract_keep_config
