@@ -15,15 +15,26 @@ FILTER_RULES_URL="https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rul
 # Function to get latest release info
 get_latest_release_info() {
   local api_url="$1"
-  local asset_name="$2"
   
   if command -v curl >/dev/null 2>&1; then
-    curl -s "$api_url" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
+    local response
+    response=$(curl -s "$api_url")
+    if [ -z "$response" ]; then
+      echo "Error: Empty response from GitHub API" >&2
+      return 1
+    fi
+    echo "$response" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO- "$api_url" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
+    local response
+    response=$(wget -qO- "$api_url")
+    if [ -z "$response" ]; then
+      echo "Error: Empty response from GitHub API" >&2
+      return 1
+    fi
+    echo "$response" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/'
   else
-    echo "Error: Neither curl nor wget found"
-    exit 1
+    echo "Error: Neither curl nor wget found" >&2
+    return 1
   fi
 }
 
@@ -32,13 +43,18 @@ download_file() {
   local url="$1"
   local dest="$2"
   
+  if [ -z "$url" ] || [ "$url" = "http://" ] || [ "$url" = "https://" ]; then
+    echo "Error: Invalid URL provided: '$url'" >&2
+    return 1
+  fi
+  
   if command -v curl >/dev/null 2>&1; then
     curl -L -o "$dest" "$url"
   elif command -v wget >/dev/null 2>&1; then
     wget -O "$dest" "$url"
   else
-    echo "Error: Neither curl nor wget found"
-    exit 1
+    echo "Error: Neither curl nor wget found" >&2
+    return 1
   fi
 }
 
@@ -68,7 +84,18 @@ update_adh() {
   
   echo "Getting latest AdGuardHome release info..."
   local version_tag
-  version_tag=$(get_latest_release_info "$ADGH_REPO_URL")
+  version_tag=$(get_latest_release_info "$ADGH_REPO_URL") || {
+    echo "Failed to get latest release info from GitHub API" >&2
+    echo "This might be due to network issues, API rate limits, or missing tools" >&2
+    echo "Please ensure you have internet connectivity and either curl or wget installed" >&2
+    exit 1
+  }
+  
+  # Validate version tag
+  if [ -z "$version_tag" ]; then
+    echo "Error: Received empty version tag from GitHub API" >&2
+    exit 1
+  fi
   echo "Latest version: $version_tag"
   
   # Update version in module.prop
@@ -83,11 +110,15 @@ update_adh() {
   mv "$temp_module_prop" "$MOD_PATH/module.prop"
   
   # Download the appropriate binary
-  local binary_url="https://github.com/AdguardTeam/AdGuardHome/releases/latest/download/AdGuardHome_linux_${arch}.tar.gz"
+  local binary_url="https://github.com/AdguardTeam/AdGuardHome/releases/download/${version_tag}/AdGuardHome_linux_${arch}.tar.gz"
   local temp_archive="/tmp/AdGuardHome.tar.gz"
   
   echo "Downloading AdGuardHome for $arch from $binary_url..."
-  download_file "$binary_url" "$temp_archive"
+  download_file "$binary_url" "$temp_archive" || {
+    echo "Failed to download AdGuardHome binary" >&2
+    echo "Please check your internet connection and try again" >&2
+    exit 1
+  }
   
   # Extract the binary
   local temp_extract_dir="/tmp/agh-update"
@@ -123,8 +154,11 @@ update_adh() {
   # Update filter rules
   echo "Updating filter rules..."
   local filter_file="$BIN_DIR/filter.txt"
-  download_file "$FILTER_RULES_URL" "$filter_file"
-  echo "Filter rules updated successfully"
+  if download_file "$FILTER_RULES_URL" "$filter_file"; then
+    echo "Filter rules updated successfully"
+  else
+    echo "Warning: Failed to update filter rules, but AdGuardHome core was updated successfully" >&2
+  fi
 }
 
 # Run update
