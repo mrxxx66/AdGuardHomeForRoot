@@ -58,8 +58,8 @@ download_file() {
   fi
 }
 
-# Determine the architecture
-detect_architecture() {
+# Determine the architecture for Android devices
+detect_android_architecture() {
   local arch=$(uname -m)
   case "$arch" in
     aarch64|arm64)
@@ -69,18 +69,18 @@ detect_architecture() {
       echo "armv7"
       ;;
     *)
-      echo "Unsupported architecture: $arch" >&2
-      exit 1
+      # For CI/CD environments, default to arm64 (most common Android architecture)
+      echo "arm64"
       ;;
   esac
 }
 
 # Main update function
 update_adh() {
-  echo "Detecting architecture..."
+  echo "Detecting architecture for Android device..."
   local arch
-  arch=$(detect_architecture)
-  echo "Detected architecture: $arch"
+  arch=$(detect_android_architecture)
+  echo "Target Android architecture: $arch"
   
   echo "Getting latest AdGuardHome release info..."
   local version_tag
@@ -96,24 +96,36 @@ update_adh() {
     echo "Error: Received empty version tag from GitHub API" >&2
     exit 1
   fi
+  
   echo "Latest version: $version_tag"
   
   # Update version in module.prop
-  local temp_module_prop="$TMPDIR/module.prop.tmp"
-  cp "$MOD_PATH/module.prop" "$temp_module_prop"
+  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ] && [ -f "$SCRIPT_DIR/../module.prop" ]; then
+    # If running in CI/CD, update local file directly
+    local temp_module_prop="$TMPDIR/module.prop.tmp"
+    cp "$SCRIPT_DIR/../module.prop" "$temp_module_prop"
+  else
+    local temp_module_prop="$TMPDIR/module.prop.tmp"
+    cp "$MOD_PATH/module.prop" "$temp_module_prop"
+  fi
   
   # Replace version and versionCode in module.prop
   sed -i "s/^version=.*/version=${version_tag#v}/" "$temp_module_prop"
   sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" "$temp_module_prop"
   
   # Move the updated file back
-  mv "$temp_module_prop" "$MOD_PATH/module.prop"
+  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ] && [ -f "$SCRIPT_DIR/../module.prop" ]; then
+    # If running in CI/CD, move to local path
+    mv "$temp_module_prop" "$SCRIPT_DIR/../module.prop"
+  else
+    mv "$temp_module_prop" "$MOD_PATH/module.prop"
+  fi
   
   # Download the appropriate binary
   local binary_url="https://github.com/AdguardTeam/AdGuardHome/releases/download/${version_tag}/AdGuardHome_linux_${arch}.tar.gz"
   local temp_archive="/tmp/AdGuardHome.tar.gz"
   
-  echo "Downloading AdGuardHome for $arch from $binary_url..."
+  echo "Downloading AdGuardHome for Android $arch from $binary_url..."
   download_file "$binary_url" "$temp_archive" || {
     echo "Failed to download AdGuardHome binary" >&2
     echo "Please check your internet connection and try again" >&2
@@ -125,26 +137,36 @@ update_adh() {
   mkdir -p "$temp_extract_dir"
   tar -xzf "$temp_archive" -C "$temp_extract_dir"
   
-  # Stop AdGuardHome if running
-  if [ -f "$PID_FILE" ]; then
-    local pid=$(cat "$PID_FILE" 2>/dev/null || echo "")
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      echo "Stopping AdGuardHome..."
-      kill "$pid"
-      sleep 3
+  # Determine target binary directory based on environment
+  local target_bin_dir
+  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ] && [ -d "$SCRIPT_DIR/../bin" ]; then
+    # Running in CI/CD
+    target_bin_dir="$SCRIPT_DIR/../bin"
+  else
+    # Running on device
+    target_bin_dir="$BIN_DIR"
+    
+    # Stop AdGuardHome if running
+    if [ -f "$PID_FILE" ]; then
+      local pid=$(cat "$PID_FILE" 2>/dev/null || echo "")
+      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        echo "Stopping AdGuardHome..."
+        kill "$pid"
+        sleep 3
+      fi
+    fi
+    
+    # Backup current binary if exists
+    if [ -f "$target_bin_dir/AdGuardHome" ]; then
+      echo "Backing up current binary..."
+      cp "$target_bin_dir/AdGuardHome" "$target_bin_dir/AdGuardHome.bak"
     fi
   fi
   
-  # Backup current binary if exists
-  if [ -f "$BIN_DIR/AdGuardHome" ]; then
-    echo "Backing up current binary..."
-    cp "$BIN_DIR/AdGuardHome" "$BIN_DIR/AdGuardHome.bak"
-  fi
-  
-  # Copy new binary
+  # Copy new binary to the appropriate location
   echo "Installing new AdGuardHome binary..."
-  mv "$temp_extract_dir/AdGuardHome" "$BIN_DIR/AdGuardHome"
-  chmod +x "$BIN_DIR/AdGuardHome"
+  mv "$temp_extract_dir/AdGuardHome" "$target_bin_dir/AdGuardHome"
+  chmod +x "$target_bin_dir/AdGuardHome"
   
   # Cleanup
   rm -rf "$temp_archive" "$temp_extract_dir"
@@ -153,7 +175,15 @@ update_adh() {
   
   # Update filter rules
   echo "Updating filter rules..."
-  local filter_file="$BIN_DIR/filter.txt"
+  local filter_file
+  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ] && [ -d "$SCRIPT_DIR/../bin" ]; then
+    # Running in CI/CD
+    filter_file="$SCRIPT_DIR/../bin/filter.txt"
+  else
+    # Running on device
+    filter_file="$BIN_DIR/filter.txt"
+  fi
+  
   if download_file "$FILTER_RULES_URL" "$filter_file"; then
     echo "Filter rules updated successfully"
   else
