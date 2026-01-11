@@ -1,7 +1,7 @@
 id=AdGuardHome
 name=AdGuardHome for Root
-version=20251217
-versionCode=45
+version=0.107.71
+versionCode=20260111
 author=mrxxx
 description=AdGuardHome module for rooted Android devices with automatic updates
 updateJson=https://raw.githubusercontent.com/mrxxx/AdGuardHomeForRoot/main/version.json
