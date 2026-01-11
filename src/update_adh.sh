@@ -1,4 +1,4 @@
-#!/sbin/sh
+#!/usr/bin/env sh
 # Script to update AdGuardHome binary and filters automatically
 # This script can be used both manually and in GitHub Actions
 
