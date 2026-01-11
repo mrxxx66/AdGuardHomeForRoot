@@ -53,28 +53,9 @@ jobs:
         # Make update script executable
         chmod +x src/update_adh.sh
         
-        # Check architecture and handle appropriately
-        ARCH=$(uname -m)
-        if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" || "$ARCH" == "armv7l" || "$ARCH" == "arm" ]]; then
-          # On supported architecture, run the script normally
-          TMPDIR=/tmp ./src/update_adh.sh
-        else
-          # On unsupported architecture (like GitHub Actions runner), update only version info
-          echo "Running on unsupported architecture $ARCH, updating version info only"
-          
-          # Get latest version info
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest)
-          VERSION_TAG=$(echo $LATEST_RELEASE | jq -r '.tag_name')
-          VERSION_NUMBER=${VERSION_TAG#v}
-          
-          # Update module.prop with new version
-          sed -i "s/^version=.*/version=$VERSION_NUMBER/" src/module.prop
-          sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" src/module.prop
-          
-          # Update filter rules
-          FILTER_URL="https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/release/rules/ads-filter.txt"
-          curl -o src/bin/filter.txt "$FILTER_URL"
-        fi
+        # Run the update script which handles architecture detection internally
+        # In CI/CD environment, it will update version info and filters
+        TMPDIR=/tmp ./src/update_adh.sh
         
     - name: Update filter rules (fallback)
       if: steps.get_version.outputs.version_changed != 'true'
