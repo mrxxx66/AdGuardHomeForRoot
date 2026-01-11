@@ -99,25 +99,35 @@ update_adh() {
   
   echo "Latest version: $version_tag"
   
-  # Update version in module.prop
-  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ] && [ -f "$SCRIPT_DIR/../module.prop" ]; then
-    # If running in CI/CD, update local file directly
-    local temp_module_prop="$TMPDIR/module.prop.tmp"
-    cp "$SCRIPT_DIR/../module.prop" "$temp_module_prop"
-  else
-    local temp_module_prop="$TMPDIR/module.prop.tmp"
-    cp "$MOD_PATH/module.prop" "$temp_module_prop"
+  # Determine if we're running in CI/CD or on device
+  local is_ci_env=0
+  if [ ! -d "$MOD_PATH" ]; then
+    # MOD_PATH doesn't exist, likely running in CI/CD
+    is_ci_env=1
   fi
   
-  # Replace version and versionCode in module.prop
-  sed -i "s/^version=.*/version=${version_tag#v}/" "$temp_module_prop"
-  sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" "$temp_module_prop"
-  
-  # Move the updated file back
-  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ] && [ -f "$SCRIPT_DIR/../module.prop" ]; then
-    # If running in CI/CD, move to local path
-    mv "$temp_module_prop" "$SCRIPT_DIR/../module.prop"
+  # Update version in module.prop
+  if [ $is_ci_env -eq 1 ]; then
+    # Running in CI/CD environment
+    local temp_module_prop="$TMPDIR/module.prop.tmp"
+    cp "src/module.prop" "$temp_module_prop"
+    
+    # Replace version and versionCode in module.prop
+    sed -i "s/^version=.*/version=${version_tag#v}/" "$temp_module_prop"
+    sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" "$temp_module_prop"
+    
+    # Move the updated file back to src/
+    mv "$temp_module_prop" "src/module.prop"
   else
+    # Running on device
+    local temp_module_prop="$TMPDIR/module.prop.tmp"
+    cp "$MOD_PATH/module.prop" "$temp_module_prop"
+    
+    # Replace version and versionCode in module.prop
+    sed -i "s/^version=.*/version=${version_tag#v}/" "$temp_module_prop"
+    sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" "$temp_module_prop"
+    
+    # Move the updated file back
     mv "$temp_module_prop" "$MOD_PATH/module.prop"
   fi
   
@@ -139,28 +149,12 @@ update_adh() {
   
   # Determine target binary directory based on environment
   local target_bin_dir
-  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ] && [ -d "$SCRIPT_DIR/../bin" ]; then
+  if [ $is_ci_env -eq 1 ]; then
     # Running in CI/CD
-    target_bin_dir="$SCRIPT_DIR/../bin"
+    target_bin_dir="src/bin"
   else
     # Running on device
     target_bin_dir="$BIN_DIR"
-    
-    # Stop AdGuardHome if running
-    if [ -f "$PID_FILE" ]; then
-      local pid=$(cat "$PID_FILE" 2>/dev/null || echo "")
-      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-        echo "Stopping AdGuardHome..."
-        kill "$pid"
-        sleep 3
-      fi
-    fi
-    
-    # Backup current binary if exists
-    if [ -f "$target_bin_dir/AdGuardHome" ]; then
-      echo "Backing up current binary..."
-      cp "$target_bin_dir/AdGuardHome" "$target_bin_dir/AdGuardHome.bak"
-    fi
   fi
   
   # Copy new binary to the appropriate location
@@ -171,14 +165,14 @@ update_adh() {
   # Cleanup
   rm -rf "$temp_archive" "$temp_extract_dir"
   
-  echo "AdGuardHome updated successfully to $version_tag for $arch architecture"
+  echo "AdGuardHome updated successfully to $version_tag for Android $arch architecture"
   
   # Update filter rules
   echo "Updating filter rules..."
   local filter_file
-  if [ -n "$TMPDIR" ] && [ -d "$TMPDIR" ] && [ -d "$SCRIPT_DIR/../bin" ]; then
+  if [ $is_ci_env -eq 1 ]; then
     # Running in CI/CD
-    filter_file="$SCRIPT_DIR/../bin/filter.txt"
+    filter_file="src/bin/filter.txt"
   else
     # Running on device
     filter_file="$BIN_DIR/filter.txt"
