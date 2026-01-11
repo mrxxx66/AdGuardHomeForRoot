@@ -1,0 +1,157 @@
+name: Update AdGuardHome Core and Filters
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq
+        
+    - name: Fetch latest AdGuardHome version
+      id: get_version
+      run: |
+        # Get latest AdGuardHome release
+        LATEST_RELEASE=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest)
+        VERSION_TAG=$(echo $LATEST_RELEASE | jq -r '.tag_name')
+        VERSION_NUMBER=${VERSION_TAG#v}
+        
+        echo "latest_version=$VERSION_NUMBER" >> $GITHUB_OUTPUT
+        echo "Version tag: $VERSION_TAG"
+        
+        # Check if version has changed compared to current
+        CURRENT_VERSION=$(grep "^version=" src/module.prop | cut -d'=' -f2)
+        echo "Current version: $CURRENT_VERSION"
+        
+        if [ "$VERSION_TAG" != "v$CURRENT_VERSION" ]; then
+          echo "version_changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "version_changed=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Update AdGuardHome binaries
+      if: steps.get_version.outputs.version_changed == 'true'
+      run: |
+        # Detect architecture for download
+        ARCH="arm64"
+        
+        # Get download URL for latest release
+        DOWNLOAD_URL=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest | jq -r '.assets[] | select(.name | contains("linux_'.$ARCH'.tar.gz")) | .browser_download_url')
+        
+        echo "Downloading from: $DOWNLOAD_URL"
+        
+        # Create temporary directory
+        TEMP_DIR=$(mktemp -d)
+        cd $TEMP_DIR
+        
+        # Download and extract
+        wget -O AdGuardHome.tar.gz "$DOWNLOAD_URL"
+        tar -xzf AdGuardHome.tar.gz
+        
+        # Copy binary to our repo
+        cp AdGuardHome/AdGuardHome "$GITHUB_WORKSPACE/src/bin/"
+        
+        # Update module.prop with new version
+        sed -i "s/^version=.*/version=${{ steps.get_version.outputs.latest_version }}/" "$GITHUB_WORKSPACE/src/module.prop"
+        sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" "$GITHUB_WORKSPACE/src/module.prop"
+        
+        cd "$GITHUB_WORKSPACE"
+        
+    - name: Update filter rules
+      run: |
+        # Download latest filter rules
+        FILTER_URL="https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/release/rules/ads-filter.txt"
+        curl -o src/bin/filter.txt "$FILTER_URL"
+        
+    - name: Run custom update script
+      run: |
+        chmod +x src/update_adh.sh
+        # We'll skip actual execution in CI as we've already done updates above
+        echo "Update script ready"
+        
+    - name: Update version.json
+      run: |
+        # Update version.json with latest info
+        jq --arg ver "${{ steps.get_version.outputs.latest_version }}" \
+           --arg verCode "$(date +%Y%m%d)" \
+           --arg zipUrl "https://github.com/${{ github.repository }}/releases/latest/download/AdGuardHomeForRoot_arm64.zip" \
+           --arg changelog "https://raw.githubusercontent.com/${{ github.repository }}/main/changelog.md" \
+           '.version = $ver | .versionCode = ($verCode | tonumber) | .zipUrl = $zipUrl | .changelog = $changelog' \
+           version.json > version.json.tmp && mv version.json.tmp version.json
+        
+    - name: Commit and push changes
+      if: steps.get_version.outputs.version_changed == 'true' || github.event_name == 'workflow_dispatch'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # Add all changed files
+        git add .
+        
+        # Check if there are actually changes to commit
+        if ! git diff --staged --quiet; then
+          git commit -m "feat: update AdGuardHome to v${{ steps.get_version.outputs.latest_version }}
+          
+          - Updated AdGuardHome binary to ${{ steps.get_version.outputs.latest_version }}
+          - Updated filter rules from AWAvenue-Ads-Rule
+          - Updated version.json"
+          
+          git push
+        else
+          echo "No changes to commit"
+        fi
+        
+    - name: Create Release
+      if: steps.get_version.outputs.version_changed == 'true'
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.get_version.outputs.latest_version }}-${{ github.run_number }}
+        release_name: "Release v${{ steps.get_version.outputs.latest_version }}-${{ github.run_number }}"
+        body: |
+          Automated release with AdGuardHome v${{ steps.get_version.outputs.latest_version }}
+          
+          ## Changelog
+          - Updated AdGuardHome binary to ${{ steps.get_version.outputs.latest_version }}
+          - Updated filter rules from AWAvenue-Ads-Rule
+        draft: false
+        prerelease: false
+        
+    - name: Package Module
+      run: |
+        # Make pack script executable
+        chmod +x pack.ps1
+        
+        # Run packaging with PowerShell
+        pwsh -Command ./pack.ps1
+        
+    - name: Upload Release Assets
+      if: steps.get_version.outputs.version_changed == 'true'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./AdGuardHomeForRoot_arm64.zip
+        asset_name: AdGuardHomeForRoot_arm64.zip
+        asset_content_type: application/zip

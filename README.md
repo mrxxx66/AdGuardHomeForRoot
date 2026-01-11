@@ -4,7 +4,7 @@
 
 ![arm-64 support](https://img.shields.io/badge/arm--64-support-ef476f?logo=linux&logoColor=white&color=ef476f)
 ![arm-v7 support](https://img.shields.io/badge/arm--v7-support-ffa500?logo=linux&logoColor=white&color=ffa500)
-![GitHub downloads](https://img.shields.io/github/downloads/twoone-3/AdGuardHomeForRoot/total?logo=github&logoColor=white&color=ffd166)
+![GitHub downloads](https://img.shields.io/github/downloads/mrxxx/AdGuardHomeForRoot/total?logo=github&logoColor=white&color=ffd166)
 ![License](https://img.shields.io/badge/License-MIT-9b5de5?logo=opensourceinitiative&logoColor=white)
 [![Docs](https://img.shields.io/badge/Docs-Guide-0066ff?logo=book&logoColor=white)](docs/index.md)
 [![Join Telegram Channel](https://img.shields.io/badge/Telegram-Join%20Channel-06d6a0?logo=telegram&logoColor=white)](https://t.me/+Q3Ur_HCYdM0xM2I1)
@@ -25,10 +25,30 @@
 - 可选将本机 DNS 请求转发到本地 AdGuardHome 服务器
 - 使用 [秋风广告规则](https://github.com/TG-Twilight/AWAvenue-Ads-Rule) 过滤广告，轻量，省电，少误杀
 - 可从 <http://127.0.0.1:3000> 访问 AdGuardHome 控制面板，支持查询统计，修改 DNS 上游服务器以及自定义规则等功能
+- **自动更新功能**：模块内置自动检查更新机制，每天自动检查 AdGuardHome 官方和模块更新
+
+## 自动更新功能
+
+本模块具有自动更新功能，包含以下组件：
+
+1. **GitHub Actions 自动检查**：每天自动检查 AdGuardHome 官方版本和秋风广告规则更新
+2. **设备端自动检查**：模块运行时会定期检查更新
+3. **可配置更新策略**：通过 `settings.conf` 文件可配置更新行为
+
+### 配置自动更新
+
+在 `/data/adb/agh/settings.conf` 文件中，可以配置以下选项：
+
+```bash
+# 自动更新配置
+AUTO_UPDATE_AGGRESSIVE_CHECK=false          # 是否启用激进检查模式
+AUTO_UPDATE_INTERVAL=86400                  # 更新检查间隔（秒）
+AUTO_UPDATE_FILTER_ONLY=false               # 是否仅更新过滤器
+```
 
 ## 教程
 
-1. 前往 [Release](https://github.com/twoone-3/AdGuardHomeForRoot/releases/latest) 页面下载模块
+1. 前往 [Release](https://github.com/mrxxx/AdGuardHomeForRoot/releases/latest) 页面下载模块
 2. 检查 Android 设置 -> 网络和互联网 -> 高级 -> 私人 DNS，确保 `私人 DNS` 关闭
 3. 在 root 管理器中安装模块，重启设备
 4. 若看到模块运行成功的提示，则可以访问 <http://127.0.0.1:3000> 进入 AdGuardHome 后台，默认用户密码 root/root

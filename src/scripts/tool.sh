@@ -64,6 +64,95 @@ toggle_adguardhome() {
   fi
 }
 
+# Function to update AdGuardHome binary and filters
+update_adh_core() {
+  local arch
+  arch=$(uname -m)
+  case "$arch" in
+    aarch64|arm64)
+      ARCH="arm64"
+      ;;
+    armv7l|arm)
+      ARCH="armv7"
+      ;;
+    *)
+      log "Unsupported architecture: $arch" "不支持的架构: $arch"
+      return 1
+      ;;
+  esac
+
+  log "Starting AdGuardHome core update for $ARCH..." "开始更新 AdGuardHome 核心 ($ARCH)..."
+
+  # Get latest release info
+  local api_response
+  api_response=$(curl -s https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest)
+  local version_tag
+  version_tag=$(echo "$api_response" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+  
+  if [ -z "$version_tag" ]; then
+    log "Failed to get latest version info" "获取最新版本信息失败"
+    return 1
+  fi
+
+  log "Found latest version: $version_tag" "发现最新版本: $version_tag"
+
+  # Update module.prop with new version
+  sed -i "s/^version=.*/version=${version_tag#v}/" "$MOD_PATH/module.prop"
+  sed -i "s/^versionCode=.*/versionCode=$(date +%Y%m%d)/" "$MOD_PATH/module.prop"
+
+  # Download new binary
+  local binary_url="https://github.com/AdguardTeam/AdGuardHome/releases/latest/download/AdGuardHome_linux_${ARCH}.tar.gz"
+  local temp_archive="/tmp/AdGuardHome.tar.gz"
+  
+  if ! curl -L -o "$temp_archive" "$binary_url"; then
+    log "Failed to download new binary" "下载新二进制文件失败"
+    return 1
+  fi
+
+  # Stop AdGuardHome if running
+  if [ -f "$PID_FILE" ]; then
+    local pid=$(cat "$PID_FILE" 2>/dev/null || echo "")
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      log "Stopping AdGuardHome..." "正在停止 AdGuardHome..."
+      kill "$pid"
+      sleep 3
+    fi
+  fi
+
+  # Extract and replace binary
+  local temp_dir="/tmp/agh-update"
+  mkdir -p "$temp_dir"
+  tar -xzf "$temp_archive" -C "$temp_dir"
+  
+  # Backup current binary
+  if [ -f "$BIN_DIR/AdGuardHome" ]; then
+    cp "$BIN_DIR/AdGuardHome" "$BIN_DIR/AdGuardHome.bak"
+  fi
+  
+  mv "$temp_dir/AdGuardHome" "$BIN_DIR/AdGuardHome"
+  chmod +x "$BIN_DIR/AdGuardHome"
+  
+  # Cleanup
+  rm -rf "$temp_archive" "$temp_dir"
+
+  log "AdGuardHome core updated successfully to $version_tag" "AdGuardHome 核心成功更新到 $version_tag"
+
+  # Update filter rules
+  update_filter_rules
+}
+
+# Function to update filter rules only
+update_filter_rules() {
+  log "Updating filter rules..." "正在更新过滤规则..."
+  
+  if ! curl -o "$BIN_DIR/filter.txt" "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/release/rules/ads-filter.txt"; then
+    log "Failed to update filter rules" "更新过滤规则失败"
+    return 1
+  fi
+  
+  log "Filter rules updated successfully" "过滤规则更新成功"
+}
+
 case "$1" in
 start)
   start_adguardhome
