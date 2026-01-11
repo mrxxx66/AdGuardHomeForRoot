@@ -54,9 +54,8 @@ jobs:
         chmod +x src/update_adh.sh
         
         # Run the update script which handles everything
-        cd src
-        TMPDIR=/tmp ./update_adh.sh
-        cd ..
+        # Set TMPDIR environment variable and run from the repository root
+        TMPDIR=/tmp ./src/update_adh.sh
         
     - name: Update filter rules (fallback)
       if: steps.get_version.outputs.version_changed != 'true'
